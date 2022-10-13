@@ -1,0 +1,487 @@
+---
+title: 'NBA Team - Data Science & Solutions Project'
+output: html_document
+author: "Alex Kikos"
+---
+
+```{r set options, include=FALSE}
+# DO NOT CHANGE THE LINE BELOW 
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{css styling, echo=FALSE}
+
+<style>
+.tocify {
+max-width: 175px !important;
+}
+</style>
+
+<style>
+.main-container {
+width: 100%;
+max-width: 940px;
+margin-left: 250px;
+margin-right: auto;
+}
+</style>
+
+```
+
+# Introduction
+
+You will work your way through this R Markdown document, answering questions as you go along. Please begin by adding your name to the "author" key in the YAML header. When you're finished with the document, come back and type your answers into the answer key at the top. Please leave all your work below and have your answers where indicated below as well. Please note that we will be reviewing your code so make it clear, concise and avoid extremely long printouts. Feel free to add in as many new code chunks as you'd like.
+
+Remember that we will be grading the quality of your code and visuals alongside the correctness of your answers. Please try to use the tidyverse as much as possible (instead of base R and explicit loops.)
+
+**Note:**
+
+**Throughout this document, the `season` column represents the year each season started. For example, the 2015-16 season will be in the dataset as 2015. For most of the rest of the project, we will refer to a season by just this number (e.g. 2015) instead of the full text (e.g. 2015-16). This nomenclature is used for the playoffs too, so if we say "the 2015 playoffs," we're referring to the playoffs from the 2015-16 season, which actually happened in 2016.**
+
+# Answers
+
+**Question 1:** Please list the team(s) and last playoffs appearance below in the document.\
+**Question 2:** 73.8%\
+**Question 3:** 29.9%\
+**Question 4:** 2.6 Years\
+**Question 5:** Plotting question, put answer below in the document.\
+**Question 6:** Written question, put answer below in the document.\
+**Question 7:** EAST: 45.9%, WEST: 32.1%\
+**Question 8:** Written question, put answer below in the document.\
+**Question 9:** Written question, put answer below in the document.\
+**Question 10:** 2 Stints, of length(s) **1** *(2007, missed in 2008)* and **10** *(2009, missed in 2010-2019)*\
+**Question 11:** Mean: 3.4, Median: 3.0\
+**Question 12:** East: 2.9, West: 4.1\
+**Question 13:** Plotting and written question, please put your answers to (a) and (b) below in the document.\
+**Question 14:** Written question, put answer below in the document.
+
+```{r load data, message = F, warning = F}
+library(tidyverse)
+results <- read_csv("./Data/team_results.csv")
+team_conferences <- read_csv("./Data/team_conferences.csv")
+```
+
+# Making the Playoffs
+
+If a team falls out of the playoffs, how many seasons are they likely to miss the playoffs before making it back? We're going to investigate this question through the next several questions.
+
+### Question 1
+
+**QUESTION:** Are there any teams that are currently on an active streak of not making the playoffs that started in **2016-17** or earlier? If so, list the team(s) and the last time each team made the playoffs.
+
+```{r}
+
+#last season each team made the playoffs
+last_playoff <- results[,1:3] %>% 
+  group_by(team) %>%
+  filter(made_playoffs == 'TRUE') %>%
+  top_n(n = 1, season)
+
+#filter to find teams whose last playoff season was in/before 2016
+last_playoff2 <- filter(last_playoff, season <= '2016')
+
+#CHA 2015
+#SAC 2005
+```
+
+**ANSWER 1:**\
+\# CHA (last app in 2015) & SAC (last app in 2005)
+
+### Question 2
+
+**QUESTION:** Starting from the 2005 season (the earliest season in the dataset), what percentage of teams who make the playoffs make the playoffs again in the following season? Please give your answer in the format XX.X%.
+
+```{r}
+
+#creates new column that checks if team made playoffs that season AND next
+new_results <- results[,1:3] %>% group_by(team) %>% mutate(
+  "made_this_and_next_season" = ifelse (made_playoffs == 'TRUE',
+    lead(made_playoffs), 0)
+  )
+
+#filters to all playoff teams
+playoff_teams <- filter(new_results, made_playoffs == 'TRUE')
+
+#removes the 2021 season since 2022 data is not included (aka removes 16 blanks)
+playoff_teams<-(playoff_teams[complete.cases(playoff_teams), ])
+
+#total number of teams that made playoffs that season AND next
+num_trues <- nrow(playoff_teams[playoff_teams$made_this_and_next_season == 1,])
+
+#find % of teams from above divided by all teams that made the playoffs
+answer2 <- round( 100 * (num_trues/nrow(playoff_teams)) , 1)
+```
+
+**ANSWER 2:** 73.8%
+
+### Question 3
+
+**QUESTION:** Starting from the 2005 season (the earliest season in the dataset), what percentage of teams who miss the playoffs make the playoffs in the following season? Please give your answer in the format XX.X%.
+
+```{r}
+
+#creates new column that checks if team made playoffs that season AND next
+missed_made <- results[,1:3] %>% group_by(team) %>% mutate(
+  "missed_this_made_next" = ifelse (made_playoffs == 'FALSE',
+    lead(made_playoffs), 0)
+  )
+
+#filters to all NON-playoff teams
+non_playoff_teams <- filter(missed_made, made_playoffs == 'FALSE')
+
+#removes the 2021 season since 2022 data is not included (aka removes 14 blanks)
+non_playoff_teams<-(non_playoff_teams[complete.cases(non_playoff_teams), ])
+
+#total number of teams that missed playoffs that season BUT made NEXT
+data3 <- nrow(non_playoff_teams[non_playoff_teams$missed_this_made_next == 1,])
+
+#find % of teams from above divided by all teams that made the playoffs
+answer3 <- round( 100 * (data3/nrow(non_playoff_teams)) ,1)
+```
+
+**ANSWER 3:**
+
+29.9%
+
+## Data Cleaning Interlude
+
+For the next part of the analysis, we're going to consider every team/season combination as a starting point (whether or not the team made the playoffs in that season) to begin to answer the question of how long teams tend to need to wait before making the playoffs.
+
+This will require some significant data cleaning and wrangling that will affect several future questions, so please read the specifications and examples carefully.
+
+-   Like the starting dataset, your clean dataset will have one row per team/season. We will only include starting points from 2005 to 2015. This is to give most teams the chance to have made it back to the playoffs at least once again after their 2015 row so that we don't need to deal with many ongoing streaks.
+    -   This means that your clean dataset should have 330 rows (30 teams over 11 seasons).\
+-   Your dataset should have a column called `missed_seasons` which represents the number of times *after* the start/row season that the team missed the playoffs.
+    -   Regardless of where a team finishes in the year corresponding to a row, if that teams makes the playoffs in the following year, they will have `missed_seasons` = 0. For example, the Bucks missed the playoffs in 2013, but their 2013 row will still have `missed_seasons` = 0 because they made the playoffs in 2014. However, the Bucks 2012 row would have `missed_seasons` = 1 due to the miss in 2013.\
+    -   The Hornets missed the playoffs in 2010, 2011, and 2012 and then made the playoffs in 2013. This means that the 2009 CHA row should have `missed_seasons` = 3.\
+-   In the event that a team has *not* made the playoffs in 2016 through 2021, you will need to make an assumption about their wait time. Let's be charitable and assume they will make the playoffs next season.
+    -   The 2015 row for a team that has not made the playoffs in 2016 onward will have `missed_seasons` = 6, which will turn out to be correct if they make the playoffs next season in 2022. (miss in '16, '17, '18, '19, '20, '21).
+
+**There are many possible ways to create this dataset. If you can, please do this data cleaning without using for loops. We will consider the quality of your code alongside just getting the answers correct while evaluating your project.**
+
+```{r}
+
+##data management without using any type of loops
+
+df <- results %>%
+  group_by(team) %>%
+  filter(season >= '2016' & season <= '2021') %>%
+  filter(!any(made_playoffs == 'TRUE')) %>%
+  ungroup()
+
+no16_21 <- unique(df$team) #finds unique teams that did NOT make playoffs between 2016-2021
+
+results2 <- results %>% add_row(season = c(2022,2022), team = c( no16_21[1], no16_21[2]), made_playoffs = c(TRUE,TRUE) ) #adds new row for '2022 season' for two teams on 6yr-no-playoff-steak
+
+df2 <- results2 %>%
+  group_by(team) %>%
+  mutate(x = ifelse( lead((made_playoffs == 'TRUE')), season, NA) ) %>%
+  fill(x, .direction = "updown") %>%
+  mutate(missed_seasons = x - season)
+
+results2 <- df2[,c(1:22, 24)] %>%
+        filter(season >= '2005' & season <= '2015')
+
+```
+
+### Question 4
+
+**QUESTION:** For a team that misses the playoffs, what is the average number of years they will need to wait to make it back? For example, if the only two teams in our sample were the 2010 Hornets and the 2011 Nets, the average would be 1 more missed playoffs season (CHA missed two more times in '11 and '12, BKN missed 0 more times by making it in '12). Please give your answer to one decimal place.
+
+```{r}
+
+#filter all non-playoff teams
+non_playoff <- filter(results2, made_playoffs == FALSE)
+
+#find avg years for all teams
+avg_years <- round(mean(non_playoff$missed_seasons),1)
+
+```
+
+**ANSWER 4:** 2.6 Years
+
+### Question 5
+
+**QUESTION:** Please make a presentation quality **ggplot** that shows off something interesting about the dataset you just created.
+
+**ANSWER 5:**
+
+```{r}
+
+library(plotly)
+
+#plot of Age vs nxt season win % from 2005-2015
+gg <- ggplot(results2, aes(x=age, y=next_season_win_pct, text = paste("Season:", season))) + 
+  geom_point(aes(col=team)) +
+  xlim(c(22, 32)) + 
+  ylim(c(0, 1)) + 
+  labs(y="Win % Next Season", 
+       x="Age", 
+       title="Age Vs Win % Next Season") +
+    geom_vline(xintercept = 27) + geom_hline(yintercept = 0.5) + 
+  annotate("text", x = 24, y = 0.05, label = "Younger & \n Low Win % Next Season") + annotate("text", x = 30, y = 0.05, label = "Older & \n Low Win % Next Season") +
+  annotate("text", x = 24, y = 0.9, label = "Younger & \n High Win % Next Season") + annotate("text", x = 30, y = 0.9, label = "Older & \n High Win % Next Season")
+ggplotly(gg)
+
+```
+
+### Question 6
+
+**QUESTION:** Write up to four sentences describing any takeaways from the plot you just made.
+
+**ANSWER 6:** The plot above showcases the relationship between team age and win % the following season. Majority of the points are on the left half of the scatterplot, suggesting that there a number of 'younger' teams and based on their win % the next season, it appears to have an impact. It is interesting that while there are only a handful of 'older' team points above, majority of them are in upper right quadrant, suggesting that if a team is 'older' they tend to have higher win % the next season.
+
+### Question 7
+
+**QUESTION:** Fit a logistic regression model using your cleaned dataset to predict the probability making the playoffs next season (ie `missed_seasons` = 0) from `net_rtg` and `conference`. That is, given a team's net rating in one season, what are the odds they make the playoffs the following season? Once you've fit the model, give the predicted probability to one decimal place that a team with a net rating of -2 from the East and the West will make the playoffs next season.
+
+```{r}
+
+#using df from previous question
+
+results3 <- results2 %>%
+  group_by(team) %>%
+  mutate(missed_szn_val = ifelse( missed_seasons == 0, 1, 0)) #gives val of 1 if missed_seasons = 0, otherwise gives val of 0. 
+
+#add in the conference df & column
+results3 <-  merge(results3, team_conferences, by = "team")
+
+#converts east/west values into numeric, 1/0
+results3 <- results3 %>%
+  group_by(team) %>%
+  mutate(conf_val = ifelse( conference == 'East', 1, 0))
+
+#create two df based on conf
+east_teams <- filter(results3, conference == 'East')
+west_teams <- filter(results3, conference == 'West')
+
+###LOGISTIC REGRESSION###
+log1 <- glm(missed_szn_val ~ net_rtg + conf_val, family = binomial(link = logit),
+             data = results3)
+summary(log1)
+
+net_rtg <- c(-2, -2) #sample net ratings of -2 for both
+conf_val <- c(1, 0) #east = 1, west = 0
+samp_data <- data.frame(net_rtg, conf_val)
+
+#predicts probability sample team from both east/west with net rating -2 will make the playoffs next season
+samp_data$pred <- predict(log1, newdata = samp_data, type = "response")
+samp_data
+
+```
+
+**ANSWER 7:**
+
+EAST: 45.9%\
+WEST: 32.1%
+
+### Question 8
+
+**QUESTION:** In no more than 4 sentences, please explain what the difference in predictions (East vs West) from question 8 means. Assume you're talking to a nontechnical member of the organization and are framing it as how this disparity might impact a Western conference team's strategic planning.
+
+**ANSWER 8:** The model above suggests that Eastern conference teams who finish the season with a -2 net rating have \~14% better chance at making the playoffs (\~46%) the following season than their Western counterparts (\~32%). This also suggests that there is less volatility in the Western conference (i.e. the same teams are typically the ones who make the playoffs) than the Eastern conference, where you have a \~14% better chance of making the playoffs the next season. If you are a Western conference team that doesn't feel like the current roster has the potential to make a push for the playoffs next season, and knowing there is *only* a 32.1% chance that you will make it, it may be time to consider making roster moves or positioning yourself to prepare for the upcoming draft to improve the roster.
+
+### Question 9
+
+So far, we've considered *every* season as a valid starting season. We need to be careful about how we interpret our results, as each "stint" outside the playoffs counts multiple times. For example, recall that the 2009 Hornets made the playoffs, had a three year stint outside the playoffs, and then made the playoffs again. Using our current methodology, we're counting that as a 3 year gap (starting from 2009), a 2 year gap (2010), a 1 year gap (2011), and a 0 year gap (2012, then making the playoffs the following season).
+
+Another way to look at this data is to check the length of each stint. In this case the 2009-2013 Hornets would contribute just one datapoint corresponding to a 3 year stint outside the playoffs. To be clear, each time a team falls outside of the playoffs will now constitute just one datapoint, and the number we're interested in is the number of consecutive seasons outside the playoffs. While 0 was a possible value for `missed_seasons`, each of these stint lengths should be at least 1.
+
+**QUESTION:** In no more than 3 sentences, please discuss the difference between these two approaches. What types of questions can we answer with each approach?
+
+**ANSWER 9:** The main difference between the two approaches is that we are looking at a 'snapshot' *(approach 1, used for Q4)* of a team in a given year **vs** the total gap or 'years off' *(approach 2)* in terms of playoff appearances. This method would be a bit easier to compute, as it would find each 'TRUE' *made_playoffs* value and then find the difference (in years) between the *next* iteration of 'TRUE', rather than computing something for every single row. This would allow us to measure tasks a such as the average length of a 'stint' a team has before making the playoffs again and provide historical context such as *'for the last 15 years, team A has been out of the playoffs for an average of 2.3 seasons'.*
+
+### Question 10
+
+Define a "stint" outside the playoffs as a continuous group of seasons in which a team does not make a playoffs appearance. For example, if a given team made the playoffs, then missed, missed, missed, made, missed, and then made the playoffs again, they would have two stints outside the playoffs, of length 3 and 1 seasons respectively.
+
+**QUESTION:** How many stints outside the playoffs have the Phoenix Suns had between 2005 and 2021? What were the lengths of these stints?
+
+```{r}
+
+#finds all PHNX data
+suns <- results[,c(1:3)] %>%
+        filter(team == 'PHX')
+
+#sets condition to find last time team was in the playoffs and missed at least 1 season before/after that season, in order to include the last time they were in
+suns <- suns %>%
+  mutate(last_in = 
+           ifelse( made_playoffs == TRUE & (lag((made_playoffs == FALSE)) |
+                    lead((made_playoffs == FALSE))), season, NA))
+#removes rows with NAs for last_in and then creates new column to compute length of stint
+suns <- suns %>%
+        filter(!is.na(suns$last_in)) %>%
+        mutate(stint_length = (lead(last_in) - last_in) - 1)
+
+#display the seasons that preceeded missing playoffs and stint length for each
+suns[complete.cases(suns),]
+
+
+#2 stints, stint 1: 1 year, stint 2: 10 years
+```
+
+**ANSWER 10:**
+
+2 Stints, of length(s) 1 *(2007, missed in 2008)* and 10 *(2009, missed in 2010-2019)*
+
+## Data Cleaning Interlude 2
+
+Please create the "stint" dataset described above.
+
+In the event that a team didn't make the playoffs in 2005, **do not count** that streak of misses as a stint. These stints would not accurately estimate the average stint length, since they may have started several years before 2005. For example, CHA missed the playoffs in 2005 through 2008. This will not contribute to a stint of length 4. There should be only two CHA stints in your dataset, one of length 3 when they missed the playoffs in 2010-2012, and one of length 1 when they missed the playoffs in 2014.
+
+As before, please only consider stints that started in 2015 or earlier to avoid needing to deal with several short ongoing streaks of missing the playoffs. For example, CHA's ongoing streak of missing the playoffs (starting in 2016) should not be included. Also as before, be charitable and assume that any ongoing stints that started 2015 or earlier will end next season. For example, if a team were to make the playoffs in 2014, then miss from 2015 to 2021, they would have missed 7 consequtive playoffs so far. We will assume that they make the playoffs next season, and thus their final stint outside the playoffs is 7 seasons long.
+
+```{r}
+
+df11 <- results %>%
+  group_by(team) %>%
+  filter(season >= '2015' & season <= '2021') %>%
+  filter(!any(made_playoffs == 'TRUE')) %>%
+  ungroup()
+#finds unique teams that did NOT make playoffs between 2015-2021
+no15_21 <- unique(df11$team) 
+
+#adds new row for '2022 season' for 1 team (SAC) on +6yr-no-playoff-steak
+stint_df <- results %>% add_row(season = 2022, 
+                          team = no15_21[1], made_playoffs =TRUE)
+#add in conference column/data
+stint_df <-  merge(stint_df, team_conferences, by = "team")
+stint_df <- stint_df[,c(1:3,23)]
+stint_df <- stint_df[order(stint_df$team, stint_df$season),]
+
+#filters the playoff teams and finds the difference between their playoff apps
+stint_df <- stint_df %>% filter(made_playoffs == TRUE) %>%
+  mutate(missed_yrs = lead(season) - season - 1
+         )
+
+#consolidate to 2005-2014 (not using TRUE vals from 2015)
+stint_df <- filter(stint_df, season < 2015 & missed_yrs > 0)
+stint_df <- stint_df[complete.cases(stint_df),]
+sum(stint_df$missed_yrs)
+
+```
+
+### Question 11
+
+**QUESTION:** To the nearest decimal, please give the mean and median length of these stints.
+
+**ANSWER 11:**
+
+```{r}
+
+round(mean(stint_df$missed_yrs),1)
+round(median(stint_df$missed_yrs),1)
+
+```
+
+Mean: 3.4\
+Median: 3.0
+
+### Question 12
+
+**QUESTION:** To the nearest decimal, please give the mean length of these stints from **each conference.**
+
+**ANSWER 12:**
+
+```{r}
+
+#eastern conf mean
+round(mean(stint_df[stint_df$conference == 'East', 'missed_yrs']) , 1)
+#western conf mean
+round(mean(stint_df[stint_df$conference == 'West', 'missed_yrs']), 1)
+```
+
+East: 2.9\
+West: 4.1
+
+### Question 13
+
+We are going to investigate whether it’s possible that the difference between conferences you found in the previous question could be reasonably explained by randomness. Sample size might be a concern as we're looking at a relatively small total number of stints. To do this, you will perform a permutation test.
+
+First, compute the difference in average stint length between the West and the East. If your answer to the last question was West: 5 years, East: 2 years, then this difference would be 3 years.
+
+For each of 10,000 iterations, randomly **reorder** the conference labels on each stint so that in each iteration, a given stint outside the playoffs might be either East or West. For example, in a given iteration, the 2010 to 2012 Hornets stint might be labeled as either East or West. For each iteration, calculate the difference in averages similar to the one you computed above. Save all 10,000 differences in a vector or dataframe.
+
+**PART (a):** Make a ggplot comparing these 10,000 randomized differences to the difference you observed in reality.
+
+**ANSWER 13 (a):**
+
+```{r}
+
+
+#avg stint length differnce between west & east
+round(mean(stint_df[stint_df$conference == 'West', 'missed_yrs']) - mean(stint_df[stint_df$conference == 'East', 'missed_yrs']), 1)
+#1.2 (4.1-2.9)
+
+q13 <- stint_df %>%
+  mutate(conf_val = ifelse( conference == 'East', 1, 0))
+
+set.seed(101)
+n <- 10000 #number of iterations
+res <- numeric(n)
+for (i in 1:n) {
+    perm <- sample(nrow(q13))
+    perm2 <- transform(q13,conf_val=conf_val[perm])
+    ## compute & store difference in means of West (0) and East (1)
+    res[i] <- mean(perm2$missed_yrs[perm2$conf_val== 0])- 
+        mean(perm2$missed_yrs[perm2$conf_val == 1])
+}
+
+#histogram of the results
+hist(res,col="gray",las=1,main="Stint Diff of 10k Randomized Conferences")
+
+
+```
+
+**PART (b):** What do you conclude from your permutation test and plot? Please answer in no more than 3 sentences.
+
+**ANSWER 13 (b):** The results produce a near-perfect bell curve using the 10,000 randomized differences. With a difference of 0 being towards the peak of the bull curve/having the largest frequency of the histogram, this suggests there is little to no difference in mean stint length between the Eastern & Western conference when looking at a large dataset. This is not terribly surprising, as teams and conference strength changes year after year, and teams always have an opportunity to end their playoff-less stint.
+
+# Modeling
+
+### Question 14
+
+**QUESTION:**
+
+In this question you will fit a model using team statistics to predict how successful the team will be the following season. As opposed to the logistic regression model you fit earlier in question 7, you now have the freedom to fit any type of model using any of the included variables. Please do not bring in any external data sources, use only what we've provided.
+
+*Note:* The team statistic variables come from basketball reference. The included data dictionary will give a brief explanation of what each stat represents.
+
+**Part (a):** Fit a model to predict the variable `next_season_win_pct`.
+
+```{r}
+
+#add in the conference df & column
+q14 <-  merge(results, team_conferences, by = "team")
+#converts east/west values into numeric, 1/0
+q14 <- q14 %>%
+  mutate(conf_val = ifelse( conference == 'East', 1, 0))
+#removes the 2021 seasons with NA vals for next season win pct
+q14 <- q14[complete.cases(q14),]
+
+#lin reg model1
+lin1<-lm(next_season_win_pct~ net_rtg + wins + age + strength_of_schedule + three_pt_pct + two_pt_pct + true_shooting_pct + efg + tov_rate + oreb + dreb + free_throw_rate + def_three_pt_pct + conf_val, data=q14)
+
+#lin reg model2
+lin2<-lm(next_season_win_pct~ net_rtg + wins + age + strength_of_schedule + efg + tov_rate + def_three_pt_pct + conf_val, data=q14)
+
+#lin reg model3
+lin3<-lm(next_season_win_pct~ net_rtg + wins + age + strength_of_schedule + tov_rate + def_three_pt_pct + conf_val, data=q14)
+
+summary(lin1) #.4076
+summary(lin2) #.4080
+summary(lin3) #.4093 BEST MODEL OF THE THREE
+
+###MODEL THREE IS THE BEST PERFORMING MODEL FROM THE ABOVE BASED ON ADJUSTED R^2###
+
+#next_season_win_pct = 0.411609 + 0.015934net_rtg + 0.002954wins -0.015378age
+# -0.050338sos + 0.989412tov_rate + 0.735549def_three_pt_pct -0.031720conf_val
+
+```
+
+**Part (b):**
+
+Explain your model to a member of the front office. What are your takeaways? Please answer in no more than 4 sentences.
+
+The linear model above (model 3) suggests that approx 41% of the variance that makes up a team's win % next season is explained by its net rating, \# of wins, age, SOS, turnover rate, defensive 3pt pct and the conference they play in. More importantly, age and net rating have a significant impact and the biggest weight on the outcome of a team's win percentage next season. This would suggest assembling a slightly younger roster in the current season, while prioritizing the team's net rating in order to give the organization the best chance to win a higher number of games *next* season.
